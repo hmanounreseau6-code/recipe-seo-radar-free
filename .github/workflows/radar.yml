@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/radar.yml'
       - 'radar.py'
+      - 'ai_brief.py'
   schedule:
     # 07:00 Casablanca = 06:00 UTC outside Ramadan, 07:00 UTC during local UTC+0.
     # GitHub's scheduler is best-effort; delivery may be delayed.
@@ -55,9 +56,17 @@ jobs:
         if: steps.timing.outputs.run_radar == 'true'
         run: python radar.py --self-test
 
+      - name: Validate AI Pro prompt generator
+        if: steps.timing.outputs.run_radar == 'true'
+        run: python ai_brief.py --self-test
+
       - name: Run research
         if: steps.timing.outputs.run_radar == 'true'
         run: python radar.py --max-candidates 10
+
+      - name: Prepare Google AI Pro competition prompt
+        if: steps.timing.outputs.run_radar == 'true'
+        run: python ai_brief.py
 
       - name: Commit latest report
         if: steps.timing.outputs.run_radar == 'true'
@@ -65,7 +74,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add reports/latest.md reports/latest.csv reports/angles.csv data/seen.json
+          git add reports/latest.md reports/latest.csv reports/angles.csv reports/google-ai-pro-prompt.md data/seen.json
           if ! git diff --cached --quiet; then
             git commit -m "Update daily US recipe SEO radar report"
             git push
@@ -80,3 +89,4 @@ jobs:
             reports/latest.md
             reports/latest.csv
             reports/angles.csv
+            reports/google-ai-pro-prompt.md
