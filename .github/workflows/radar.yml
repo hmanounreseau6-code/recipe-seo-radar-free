@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/radar.yml'
+      - 'radar.py'
   schedule:
     # 07:00 Casablanca = 06:00 UTC outside Ramadan, 07:00 UTC during local UTC+0.
     # GitHub's scheduler is best-effort; delivery may be delayed.
