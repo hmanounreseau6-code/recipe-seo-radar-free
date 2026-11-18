@@ -57,7 +57,7 @@ jobs:
 
       - name: Run research
         if: steps.timing.outputs.run_radar == 'true'
-        run: python radar.py --max-candidates 18
+        run: python radar.py --max-candidates 10
 
       - name: Commit latest report
         if: steps.timing.outputs.run_radar == 'true'
@@ -65,7 +65,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add reports/latest.md reports/latest.csv data/seen.json
+          git add reports/latest.md reports/latest.csv reports/angles.csv data/seen.json
           if ! git diff --cached --quiet; then
             git commit -m "Update daily US recipe SEO radar report"
             git push
@@ -79,3 +79,4 @@ jobs:
           path: |
             reports/latest.md
             reports/latest.csv
+            reports/angles.csv
