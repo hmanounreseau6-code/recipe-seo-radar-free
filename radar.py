@@ -238,7 +238,7 @@ def _angle_query_urls(parent: str, angle: str) -> tuple[str, str]:
 
 
 def discover_angles(client: object, keyword: str, seed: str,
-                    fallback: list[str]) -> tuple[list[dict], str]:
+                    fallback: list[str], payload_ready: bool = False) -> tuple[list[dict], str]:
     """Attempt Rising + Top for each keyword, then its broader topic if empty.
 
     Never label fallback Autocomplete as Rising or as a verified weak SERP.
@@ -249,7 +249,7 @@ def discover_angles(client: object, keyword: str, seed: str,
             if not query or query == "Google Trends RSS":
                 continue
             try:
-                if query != keyword:
+                if query != keyword or not payload_ready:
                     client.build_payload([query], timeframe="today 3-m", geo="US")
                 payload = client.related_queries()
                 item = payload.get(query, {}) if isinstance(payload, dict) else {}
@@ -391,13 +391,37 @@ def explore(today: datetime, max_candidates: int) -> tuple[list[dict], dict]:
             if row["trend"] == "Non vérifié":
                 trending_failed += 1
             time.sleep(2)
+        # Drill down: for EVERY shortlisted keyword, inspect associated
+        # Google Trends Rising/Top queries. When blocked, disclose fallback.
+        fallback_suggestions = [
+            x["keyword"] for x in fresh if x["seed"] == row["seed"]
+            and x["keyword"] != row["keyword"]
+        ]
+        angle_client = trends_client if trending_failed < 3 else None
+        row["angles"], row["angles_status"] = discover_angles(
+            angle_client, row["keyword"], row["seed"], fallback_suggestions,
+            payload_ready=row["trend"] not in ("Non vérifié",)
+        )
+        # The first exact-topic Rising query is a *candidate*, NOT a validated
+        # low-competition opportunity or measured search volume.
+        valid_rising = [a for a in row["angles"]
+                        if a["kind"] == "Rising" and a["relation"] == "Angle lié au parent"]
+        row["best_angle"] = valid_rising[0] if valid_rising else None
+        if not row["best_angle"]:
+            row["angle_note"] = "Pas d'angle Rising lié au parent vérifié"
+        else:
+            row["angle_note"] = "Rising associé ; SERP Google USA à vérifier"
         # Bing RSS returned country / encyclopaedia pages for recipe queries.
         # Do not use this as evidence of weak Google organic competition.
         row["bing"] = {"results": [], "exact_title_count": None, "source": "Non évalué"}
         row["serp_note"] = "Google USA Top 10 : non vérifié"
         row["score"] = pre_score(row)
         row["score"] += 35 if row["trend"] == "Rising 90j" else 12 if row["trend"] == "Stable 90j" else 0
-        row["decision"] = "Priorité recherche approfondie" if row["trend"] == "Rising 90j" else "À confirmer"
+        row["score"] += 18 if row["best_angle"] else 0
+        row["decision"] = ("Angle Rising à vérifier sur Google USA"
+                           if row["best_angle"]
+                           else "Priorité recherche approfondie"
+                           if row["trend"] == "Rising 90j" else "À confirmer")
         row["google_trends_url"] = (
             "https://trends.google.com/trends/explore?"
             + urllib.parse.urlencode({"date": "today 3-m", "geo": "US", "q": row["keyword"]})
@@ -416,7 +440,8 @@ def explore(today: datetime, max_candidates: int) -> tuple[list[dict], dict]:
     return final, {
         "seeds": len(selected), "autocomplete_probes": source_attempts,
         "suggestion_candidates": len(found), "new_candidates": len(fresh),
-        "trends_rss_food": len(breaking)
+        "trends_rss_food": len(breaking),
+        "confirmed_related_angles": sum(1 for row in final if row["best_angle"])
     }
 
 
