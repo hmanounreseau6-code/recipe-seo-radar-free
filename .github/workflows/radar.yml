@@ -1,0 +1,77 @@
+name: Recipe SEO Radar FREE
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 07:00 Casablanca = 06:00 UTC outside Ramadan, 07:00 UTC during local UTC+0.
+    # GitHub's scheduler is best-effort; delivery may be delayed.
+    - cron: "0 6,7 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: recipe-seo-radar-free
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    steps:
+      - name: Check Casablanca 07h or manual trigger
+        id: timing
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$(TZ=Africa/Casablanca date +%H)" == "07" ]]; then
+            echo "run_radar=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_radar=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping: not 07h in Casablanca."
+          fi
+
+      - name: Checkout
+        if: steps.timing.outputs.run_radar == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.timing.outputs.run_radar == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.timing.outputs.run_radar == 'true'
+        run: python -m pip install -r requirements.txt
+
+      - name: Validate script
+        if: steps.timing.outputs.run_radar == 'true'
+        run: python radar.py --self-test
+
+      - name: Run research
+        if: steps.timing.outputs.run_radar == 'true'
+        run: python radar.py --max-candidates 18
+
+      - name: Commit latest report
+        if: steps.timing.outputs.run_radar == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/latest.md reports/latest.csv data/seen.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update daily US recipe SEO radar report"
+            git push
+          fi
+
+      - name: Upload downloadable CSV and report
+        if: steps.timing.outputs.run_radar == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: recipe-seo-radar-report
+          path: |
+            reports/latest.md
+            reports/latest.csv
