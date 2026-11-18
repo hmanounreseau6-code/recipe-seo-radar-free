@@ -451,12 +451,16 @@ def write_reports(today: datetime, rows: list[dict], stats: dict) -> None:
     fields = [
         "date", "keyword", "trend_90d", "trend_evidence", "screening_source",
         "bing_exact_titles", "screening_note", "us_volume", "organic_kd",
-        "decision", "google_trends_url", "competitor_urls"
+        "decision", "google_trends_url", "competitor_urls",
+        "best_rising_angle", "angle_growth", "angle_source", "angle_status",
+        "compare_google_trends_url", "angle_google_serp_url"
     ]
     with csv_path.open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
         for row in rows:
+            best = row.get("best_angle")
+            compare_url, serp_url = _angle_query_urls(row["keyword"], best["keyword"]) if best else ("", "")
             writer.writerow({k: safe_csv(v) for k, v in {
                 "date": today.date().isoformat(), "keyword": row["keyword"],
                 "trend_90d": row["trend"], "trend_evidence": row["trend_note"],
@@ -467,8 +471,38 @@ def write_reports(today: datetime, rows: list[dict], stats: dict) -> None:
                 "us_volume": "non vérifié", "organic_kd": "non vérifié",
                 "decision": row["decision"], "google_trends_url": row["google_trends_url"],
                 "competitor_urls": "; ".join(
-                    c["url"] for c in row["bing"]["results"][:3])
+                    c["url"] for c in row["bing"]["results"][:3]),
+                "best_rising_angle": best["keyword"] if best else "Non vérifié",
+                "angle_growth": best["growth"] if best else "Non vérifié",
+                "angle_source": best["source_keyword"] if best else row["angles_status"],
+                "angle_status": row["angle_note"],
+                "compare_google_trends_url": compare_url,
+                "angle_google_serp_url": serp_url
             }.items()})
+
+    # Full drill-down: all Rising/Top findings, including independent new recipe
+    # topics that appear in related searches but do not share the parent intent.
+    with (REPORT_DIR / "angles.csv").open("w", encoding="utf-8-sig", newline="") as stream:
+        fields_angles = ["parent_keyword", "related_keyword", "source_query",
+                         "source", "trend_type", "relative_growth_or_index",
+                         "relation_to_parent", "google_trends_comparison",
+                         "google_usa_serp_validation"]
+        writer = csv.DictWriter(stream, fieldnames=fields_angles)
+        writer.writeheader()
+        for parent in rows:
+            for angle in parent.get("angles", []):
+                compare, serp = _angle_query_urls(parent["keyword"], angle["keyword"])
+                writer.writerow({k: safe_csv(v) for k, v in {
+                    "parent_keyword": parent["keyword"],
+                    "related_keyword": angle["keyword"],
+                    "source_query": angle["source_keyword"],
+                    "source": angle["source"],
+                    "trend_type": angle["kind"],
+                    "relative_growth_or_index": angle["growth"],
+                    "relation_to_parent": angle["relation"],
+                    "google_trends_comparison": compare,
+                    "google_usa_serp_validation": serp
+                }.items()})
 
     lines = [
         "# Recipe SEO Radar FREE — " + today.strftime("%Y-%m-%d %H:%M"),
@@ -482,17 +516,22 @@ def write_reports(today: datetime, rows: list[dict], stats: dict) -> None:
         "## Recherche exécutée",
         "Seeds : {seeds} ; requêtes Autocomplete : {autocomplete_probes} ; "
         "suggestions uniques : {suggestion_candidates} ; nouvelles candidates : "
-        "{new_candidates} ; sujets food RSS : {trends_rss_food}.".format(**stats),
+        "{new_candidates} ; sujets food RSS : {trends_rss_food} ; "
+        "keywords avec angle Rising lié : {confirmed_related_angles}.".format(**stats),
         "",
         "## Suggestions diversifiées à valider (non classées par KD SEO)",
         "",
-        "| # | Keyword exact | Trend USA 90j | Pré-analyse concurrence | Décision |",
+        "| # | Keyword parent | Trend 90j | Meilleur angle Rising vérifié | Concurrence |",
         "|---|---|---|---|---|"
     ]
     for ix, row in enumerate(rows, 1):
-        lines.append("| {i} | {kw} | {tr} | {sr} | {de} |".format(
-            i=ix, kw=safe_md(row["keyword"]), tr=safe_md(row["trend"]),
-            sr=safe_md(row["serp_note"]), de=safe_md(row["decision"])))
+        best = row.get("best_angle")
+        if best:
+            best_label = safe_md(best["keyword"]) + " (" + safe_md(best["growth"]) + ")"
+        else:
+            best_label = "Non vérifié"
+        lines.append("| {i} | {kw} | {tr} | {angle} | Google Top 10 non vérifié |".format(
+            i=ix, kw=safe_md(row["keyword"]), tr=safe_md(row["trend"]), angle=best_label))
     if not rows:
         lines.append("| — | Aucune nouvelle piste exploitable (ou sources indisponibles) | — | — | — |")
     lines.extend(["", "## Sources et recherches à approfondir", ""])
@@ -500,7 +539,22 @@ def write_reports(today: datetime, rows: list[dict], stats: dict) -> None:
         lines.append("### {}. {}".format(ix, safe_md(row["keyword"])))
         lines.append("- Google Trends USA : " + row["google_trends_url"])
         lines.append("- Signal : {} — {}".format(row["trend"], row["trend_note"]))
-        lines.append("- Pré-analyse : " + row["serp_note"])
+        lines.append("- Requêtes associées : " + row.get("angles_status", "Non vérifié"))
+        lines.append("- Concurrence Google USA : **NON VÉRIFIÉE**")
+        if row.get("best_angle"):
+            angle = row["best_angle"]
+            compare, serp = _angle_query_urls(row["keyword"], angle["keyword"])
+            lines.append("- **Angle Rising prioritaire :** {} ({}) — source Google Trends : {}".format(
+                safe_md(angle["keyword"]), angle["growth"], safe_md(angle["source_keyword"])))
+            lines.append("- [Comparer la requête et l'angle sur Google Trends](" + compare + ")")
+            lines.append("- [Vérifier manuellement la SERP Google USA](" + serp + ")")
+        else:
+            lines.append("- **Aucun angle Rising confirmé** ; suggestions alternatives ci-dessous uniquement.")
+        for angle in row.get("angles", [])[:6]:
+            compare, serp = _angle_query_urls(row["keyword"], angle["keyword"])
+            lines.append("  - {} / {} / {} : {} — {}. [Trends]({}) / [Google USA]({})".format(
+                angle["kind"], safe_md(angle["growth"]), angle["relation"],
+                safe_md(angle["keyword"]), angle["source"], compare, serp))
         for competitor in row["bing"]["results"][:3]:
             lines.append("- Résultat **Bing (pas Google)** : {} — {}".format(
                 safe_md(competitor["title"]), competitor["url"]))
@@ -528,6 +582,10 @@ def self_test() -> None:
     assert classify_trend(values)[0] == "Rising 90j"
     assert classify_trend([40] * 90)[0] == "Stable 90j"
     assert classify_trend([0] * 89 + [100])[0] == "Signal insuffisant"
+    assert _relative_angle_type("spicy cabbage noodles", "cabbage noodles") == "Angle lié au parent"
+    assert _relative_angle_type("cranberry coffee cake", "cabbage noodles") == "Nouvelle recette indépendante"
+    url, serp = _angle_query_urls("cabbage noodles", "miso cabbage noodles")
+    assert "trends.google.com" in url and "google.com/search" in serp
     print("Self-test OK")
 
 
