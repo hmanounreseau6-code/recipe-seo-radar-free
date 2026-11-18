@@ -77,7 +77,11 @@ jobs:
           git add reports/latest.md reports/latest.csv reports/angles.csv reports/google-ai-pro-prompt.md data/seen.json
           if ! git diff --cached --quiet; then
             git commit -m "Update daily US recipe SEO radar report"
-            git push
+            # Other repository edits may arrive while research is running.
+            # Rebase the new generated report onto the latest main before push.
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
           fi
 
       - name: Upload downloadable CSV and report
