@@ -176,6 +176,125 @@ def trends_90d(keyword: str, client: object) -> tuple[str, str]:
         return "Non vérifié", "Appel Google Trends échoué"
 
 
+def _relative_angle_type(query: str, seed: str) -> str:
+    """Separate adjacent food trends from true variants of the parent recipe."""
+    common = {
+        "recipe", "recipes", "easy", "best", "healthy", "how", "make", "to",
+        "with", "without", "for", "and", "the", "a", "of", "in",
+        "homemade", "quick", "simple", "old", "fashioned", "style"
+    }
+    parent_words = {s for s in norm(seed).split() if len(s) >= 4 and s not in common}
+    query_words = set(norm(query).split())
+    return "Angle lié au parent" if parent_words & query_words else "Nouvelle recette indépendante"
+
+
+def _parse_related_frame(frame: object, kind: str, seed: str) -> list[dict]:
+    """Extract Google Trends related queries. Rising values are relative, not volume."""
+    if frame is None or not hasattr(frame, "iterrows"):
+        return []
+    result = []
+    for _, row in frame.iterrows():
+        candidate = norm(str(row.get("query", "")))
+        if not acceptable(candidate):
+            continue
+        raw_value = row.get("value", "")
+        if kind == "Rising":
+            if isinstance(raw_value, str) and "breakout" in raw_value.lower():
+                label = "Breakout"
+                score = 5001
+            else:
+                try:
+                    score = int(raw_value)
+                    label = "+{} %".format(score)
+                except (ValueError, TypeError):
+                    continue
+            if score <= 0:
+                continue
+        else:
+            try:
+                score = int(raw_value)
+                label = "{} / 100 (indice relatif Top)".format(score)
+            except (ValueError, TypeError):
+                continue
+        result.append({
+            "keyword": candidate,
+            "kind": kind,
+            "growth": label,
+            "relative_score": score,
+            "relation": _relative_angle_type(candidate, seed)
+        })
+    return sorted(result, key=lambda x: x["relative_score"], reverse=True)
+
+
+def _angle_query_urls(parent: str, angle: str) -> tuple[str, str]:
+    compare = "https://trends.google.com/trends/explore?" + urllib.parse.urlencode({
+        "date": "today 3-m", "geo": "US", "q": parent + "," + angle
+    })
+    # A direct Google URL is only a manual validation link, not SERP evidence.
+    serp = "https://www.google.com/search?" + urllib.parse.urlencode({
+        "q": '"' + angle + '" recipe', "gl": "us", "hl": "en"
+    })
+    return compare, serp
+
+
+def discover_angles(client: object, keyword: str, seed: str,
+                    fallback: list[str]) -> tuple[list[dict], str]:
+    """Attempt Rising + Top for each keyword, then its broader topic if empty.
+
+    Never label fallback Autocomplete as Rising or as a verified weak SERP.
+    """
+    tried = []
+    if client is not None:
+        for query in dict.fromkeys([keyword, seed]):
+            if not query or query == "Google Trends RSS":
+                continue
+            try:
+                if query != keyword:
+                    client.build_payload([query], timeframe="today 3-m", geo="US")
+                payload = client.related_queries()
+                item = payload.get(query, {}) if isinstance(payload, dict) else {}
+                angles = (
+                    _parse_related_frame(item.get("rising"), "Rising", seed)
+                    + _parse_related_frame(item.get("top"), "Top", seed)
+                )
+                unique = []
+                seen_local = {norm(keyword)}
+                for angle in angles:
+                    if angle["keyword"] in seen_local:
+                        continue
+                    seen_local.add(angle["keyword"])
+                    angle["source_keyword"] = query
+                    angle["source"] = "Google Trends USA"
+                    unique.append(angle)
+                if unique:
+                    return unique[:8], "Google Trends USA — requêtes associées de " + query
+                tried.append("aucune requête associée pour " + query)
+            except Exception as exc:
+                tried.append("Google Trends indisponible ({})".format(type(exc).__name__))
+                # Avoid abusive repeated requests after throttling.
+                if any(token in str(exc).lower() for token in ("429", "too many", "quota")):
+                    break
+            time.sleep(1.5)
+
+    proposals = []
+    seen_local = {norm(keyword)}
+    for candidate in fallback:
+        candidate = norm(candidate)
+        if candidate in seen_local or not acceptable(candidate):
+            continue
+        seen_local.add(candidate)
+        proposals.append({
+            "keyword": candidate, "kind": "Autocomplete",
+            "growth": "Non vérifié", "relative_score": 0,
+            "relation": _relative_angle_type(candidate, seed),
+            "source_keyword": seed, "source": "Google Autocomplete USA"
+        })
+        if len(proposals) == 4:
+            break
+    reason = "; ".join(tried) if tried else "Aucun accès à Google Trends"
+    return proposals, "Suggestions Autocomplete seulement : " + reason
+
+
 def safe_md(value: str) -> str:
     return str(value).replace("|", "/").replace("\n", " ").replace("\r", " ")
 
