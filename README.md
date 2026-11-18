@@ -8,7 +8,8 @@ Veille SEO automatisée et gratuite de recettes recherchées aux États-Unis, to
 2. Cliquer **Recipe SEO Radar FREE** → **Run workflow**.
 3. Lire **reports/latest.md** : 10 familles de recettes et meilleurs angles Rising identifiés.
 4. Ouvrir **reports/angles.csv** : toutes les requêtes associées (Rising, Top ou suggestions Autocomplete) avec liens Google Trends USA et recherche Google pour inspecter les concurrents.
-5. Utiliser **reports/latest.csv** comme récapitulatif.
+5. Ouvrir **reports/google-ai-pro-prompt.md**, copier son texte dans **Google AI Pro → Recherche approfondie** pour l'audit des trois premiers concurrents et des gaps.
+6. Utiliser **reports/latest.csv** comme récapitulatif.
 
 Une exécution quotidienne vise 7h heure **Africa/Casablanca**. GitHub Actions peut retarder les exécutions ; aucune précision à la minute n'est garantie.
 
@@ -21,6 +22,7 @@ Une exécution quotidienne vise 7h heure **Africa/Casablanca**. GitHub Actions p
 - Analyse expérimentale de tendance sur 90 jours avec pytrends (non officiel et parfois bloqué).
 - Pré-analyse facultative de résultats Bing RSS : **ne correspond pas à un classement Google USA**.
 - Filtre des recettes liées au porc, déduplication et rapports Markdown + CSV.
+- **Étape 1 : Google Trends USA** pour vérifier le trend et identifier ses requêtes Rising/Top. **Étape 2 : Google AI Pro** pour analyser les Top 3 concurrents Google USA, l'intention précise, les gaps et un angle différencié. Un prompt groupé est préparé automatiquement, mais l'analyse Google AI Pro doit être lancée manuellement : aucune API ni intégration directe n'est supposée.
 - Aucune clé API ni carte bancaire. Exécution avec GitHub Actions sur le dépôt public.
 
 ## Limites importantes
@@ -42,6 +44,8 @@ Installer Python 3.11+, puis lancer :
 - reports/latest.md : rapport exploitable
 - reports/latest.csv : synthèse exportable
 - reports/angles.csv : toutes les variantes et leurs preuves / liens de vérification
+- reports/google-ai-pro-prompt.md : prompt de recherche approfondie Google AI Pro prêt à copier
+- ai_brief.py : génération du prompt groupé pour les vrais angles Rising
 - data/seen.json : historique anti-répétition
 
 Projet original inspiré des méthodes de découverte de mots-clés des dépôts open source présentés par l'utilisateur. Aucun code tiers n'est directement copié.
@@ -49,3 +53,7 @@ Projet original inspiré des méthodes de découverte de mots-clés des dépôts
 ## Interprétation des angles
 
 Une forte progression relative (y compris Breakout ou +175 200 %) peut provenir d'un volume initial quasi nul. L'angle n'est **pas automatiquement facile à classer** : vérifier les 10 résultats organiques Google USA, notamment l'intention de recherche, les recettes exactes déjà publiées et les grands médias culinaires. L'outil gratuit peut échouer à lire Google Trends suite aux limites anti-automatisation ; dans ce cas, ouvrir les liens Google Trends du rapport et vérifier les requêtes Rising manuellement.
+
+## Workflow SEO final
+
+Google Autocomplete (découverte) → Google Trends USA Rising/Top (valider un signal) → Google AI Pro Deep Research (Top 3 concurrents, intentions et gaps) → décision éditoriale. Ni volume ni KD organique précis ne sont inventés. Les nouveaux articles ne sont jamais créés avant le rapport de concurrence.
