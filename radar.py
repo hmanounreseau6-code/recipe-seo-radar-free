@@ -245,7 +245,17 @@ def explore(today: datetime, max_candidates: int) -> tuple[list[dict], dict]:
         return specificity + food_intent + trend_seed - abs(length - 5) * 0.7
 
     fresh.sort(key=lambda x: (pre_score(x), x["keyword"]), reverse=True)
-    candidates = fresh[:max_candidates]
+    # Diversify by food family: avoid many near-identical keywords.
+    candidates = []
+    selected_seeds = set()
+    for item in fresh:
+        seed_name = item["seed"]
+        if seed_name in selected_seeds:
+            continue
+        selected_seeds.add(seed_name)
+        candidates.append(item)
+        if len(candidates) >= max_candidates:
+            break
     try:
         from pytrends.request import TrendReq
         trends_client = TrendReq(hl="en-US", tz=300, retries=0)
@@ -262,24 +272,13 @@ def explore(today: datetime, max_candidates: int) -> tuple[list[dict], dict]:
             if row["trend"] == "Non vérifié":
                 trending_failed += 1
             time.sleep(2)
-        row["bing"] = bing_rss_screen(row["keyword"])
-        time.sleep(0.7)
-        count = row["bing"]["exact_title_count"]
-        if count is None:
-            row["serp_note"] = "Google SERP non vérifiée ; Bing indisponible"
-        elif count <= 1:
-            row["serp_note"] = "Peu de titres exacts sur Bing ; Google SERP à vérifier"
-        else:
-            row["serp_note"] = "Des titres exacts existent sur Bing ; vérifier Google"
-
+        # Bing RSS returned country / encyclopaedia pages for recipe queries.
+        # Do not use this as evidence of weak Google organic competition.
+        row["bing"] = {"results": [], "exact_title_count": None, "source": "Non évalué"}
+        row["serp_note"] = "Google USA Top 10 : non vérifié"
         row["score"] = pre_score(row)
         row["score"] += 35 if row["trend"] == "Rising 90j" else 12 if row["trend"] == "Stable 90j" else 0
-        if count is not None:
-            row["score"] += max(0, 7 - 2 * count)
-        if row["trend"] == "Rising 90j" and count is not None and count <= 1:
-            row["decision"] = "Priorité recherche approfondie"
-        else:
-            row["decision"] = "À confirmer"
+        row["decision"] = "Priorité recherche approfondie" if row["trend"] == "Rising 90j" else "À confirmer"
         row["google_trends_url"] = (
             "https://trends.google.com/trends/explore?"
             + urllib.parse.urlencode({"date": "today 3-m", "geo": "US", "q": row["keyword"]})
@@ -341,7 +340,7 @@ def write_reports(today: datetime, rows: list[dict], stats: dict) -> None:
         "suggestions uniques : {suggestion_candidates} ; nouvelles candidates : "
         "{new_candidates} ; sujets food RSS : {trends_rss_food}.".format(**stats),
         "",
-        "## Top opportunités à vérifier",
+        "## Suggestions diversifiées à valider (non classées par KD SEO)",
         "",
         "| # | Keyword exact | Trend USA 90j | Pré-analyse concurrence | Décision |",
         "|---|---|---|---|---|"
