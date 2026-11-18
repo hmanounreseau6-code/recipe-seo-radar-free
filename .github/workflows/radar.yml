@@ -2,6 +2,9 @@ name: Recipe SEO Radar FREE
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/radar.yml'
   schedule:
     # 07:00 Casablanca = 06:00 UTC outside Ramadan, 07:00 UTC during local UTC+0.
     # GitHub's scheduler is best-effort; delivery may be delayed.
@@ -25,7 +28,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         shell: bash
         run: |
-          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$(TZ=Africa/Casablanca date +%H)" == "07" ]]; then
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$EVENT_NAME" == "push" || "$(TZ=Africa/Casablanca date +%H)" == "07" ]]; then
             echo "run_radar=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_radar=false" >> "$GITHUB_OUTPUT"
